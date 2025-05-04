@@ -20,11 +20,18 @@
 - shadcn/ui
 - IndexedDB
 
-## 安装
+## 快速开始
+
+### 前置要求
+
+- Node.js 18.0 或更高版本
+- pnpm 包管理器
+
+### 安装
 
 1. 克隆仓库
 ```bash
-git clone [你的仓库地址]
+git clone https://github.com/Andyfqj/exam-broadcast-panel.git
 cd exam-broadcast-panel
 ```
 
@@ -40,7 +47,8 @@ pnpm dev
 
 ## 使用说明
 
-1. 准备音频文件
+### 音频文件准备
+
 将以下音频文件放在 `public` 目录下：
 - 15min_before.mp3
 - start_exam.mp3
@@ -53,11 +61,13 @@ pnpm dev
 - 5min_before.mp3
 - music.mp3
 
-2. 添加考试
+### 添加考试
+
 - 通过上传文件添加：准备一个符合格式的文本文件
 - 通过界面添加：使用"添加考试"按钮手动添加
 
-3. 文件格式示例
+### 文件格式示例
+
 ```
 2025.04.20
 数学 09:00 120min {分发试卷,考试开始,考试结束}
@@ -78,6 +88,25 @@ pnpm build
 pnpm start
 ```
 
+## 项目结构
+
+```
+exam-broadcast-panel/
+├── app/                # Next.js 应用目录
+├── components/         # React 组件
+├── public/            # 静态资源
+├── styles/            # 样式文件
+└── types/             # TypeScript 类型定义
+```
+
+## 贡献指南
+
+1. Fork 本仓库
+2. 创建你的特性分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交你的更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 开启一个 Pull Request
+
 ## 许可证
 
-MIT 
+本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情
