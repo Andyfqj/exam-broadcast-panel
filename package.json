@@ -1,7 +1,12 @@
 {
-  "name": "my-v0-project",
+  "name": "exam-broadcast-panel",
   "version": "0.1.0",
   "private": true,
+  "description": "一个基于 Next.js 的考试广播控制面板",
+  "author": {
+    "name": "Andyfqj",
+    "email": "andyfqj@outlook.com"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",

@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
@@ -36,7 +36,6 @@ import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { toast } from "@/components/ui/use-toast"
-import { ToastAction } from "@/components/ui/toast"
 import {
   Dialog,
   DialogContent,
@@ -80,19 +79,49 @@ interface AudioCache {
   status: "pending" | "cached" | "error"
 }
 
-// 修改音频文件映射，添加更多备用音频格式和来源
+// 音频库类型
+type AudioLibraryType = "default" | "guangchuhecheng"
+
+// 音频库名称映射
+const audioLibraryNames = {
+  default: "广高",
+  guangchuhecheng: "广初合成",
+}
+
+
+// 广初合成音库不全的音频列表
+const guangchuhechengIncompleteAudios = ["考试前19分钟", "考试前26分钟", "考试前5分钟"]
+
+
+// 修改音频文件映射，添加不同音库的支持
 const audioFileMap = {
-  分发试卷: "/15min_before.mp3",
-  考试开始: "/start_exam.mp3",
-  考试结束: "/end_exam.mp3",
-  考试提醒: "/15min_remaining.mp3",
-  考试前45分钟: "/45min_before.mp3",
-  考试前30分钟: "/30min_before.mp3",
-  考试前19分钟: "/19min_before.mp3",
-  考试前15分钟: "/15min_before.mp3",
-  考试前10分钟: "/10min_before.mp3",
-  考试前5分钟: "/5min_before.mp3",
-  试音音乐: "/music.mp3",
+  default: {
+    分发试卷: "/15min_before.mp3",
+    考试开始: "/start_exam.mp3",
+    考试结束: "/end_exam.mp3",
+    考试提醒: "/15min_remaining.mp3",
+    考试前45分钟: "/45min_before.mp3",
+    考试前30分钟: "/30min_before.mp3",
+    考试前19分钟: "/19min_before.mp3",
+    考试前15分钟: "/15min_before.mp3",
+    考试前10分钟: "/10min_before.mp3",
+    考试前5分钟: "/5min_before.mp3",
+    试音音乐: "/music.mp3",
+  },
+  guangchuhecheng: {
+    分发试卷: "/guangchuhecheng/15min_before.mp3",
+    考试开始: "/guangchuhecheng/start_exam.mp3",
+    考试结束: "/guangchuhecheng/end_exam.mp3",
+    考试提醒: "/guangchuhecheng/15min_remaining.mp3",
+    考试前45分钟: "/guangchuhecheng/45min_before.mp3",
+    考试前30分钟: "/guangchuhecheng/30min_before.mp3",
+    考试前19分钟: "/19min_before.mp3",
+    考试前15分钟: "/guangchuhecheng/15min_before.mp3",
+    考试前10分钟: "/guangchuhecheng/10min_before.mp3",
+    考试前5分钟: "/5min_before.mp3",
+    试音音乐: "/music.mp3",
+    考试前26分钟: "/26min_before.mp3",
+  },
 }
 
 // 事件类型颜色映射
@@ -131,13 +160,13 @@ const EXAM_STORE = "examEvents"
 
 export default function ExamBroadcastPanel() {
   const [examEvents, setExamEvents] = useState<ExamEvent[]>([])
-  const [currentTime, setCurrentTime] = useState<Date>(new Date())
+  const [currentTime, setCurrentTime] = useState<Date | null>(null)
   const [currentSubject, setCurrentSubject] = useState<string>("")
   const [nextEvent, setNextEvent] = useState<ExamEvent | null>(null)
   const [countdown, setCountdown] = useState<number>(0)
   const [activeEvent, setActiveEvent] = useState<string | null>(null)
   const [isPlaying, setIsPlaying] = useState<boolean>(false)
-  const [autoPlayEnabled, setAutoPlayEnabled] = useState<boolean>(false)
+  const [autoPlayEnabled, setAutoPlayEnabled] = useState<boolean>(true)
   const [examDate, setExamDate] = useState<string>("")
   const [volume, setVolume] = useState<number>(80)
   const [isMuted, setIsMuted] = useState<boolean>(false)
@@ -147,7 +176,8 @@ export default function ExamBroadcastPanel() {
   const [testMusicPlaying, setTestMusicPlaying] = useState<boolean>(false)
   const [isAudioLoading, setIsAudioLoading] = useState<boolean>(false)
   const [audioError, setAudioError] = useState<string | null>(null)
-  const [testMusicSource, setTestMusicSource] = useState<string>(audioFileMap["试音音乐"])
+  const [selectedAudioLibrary, setSelectedAudioLibrary] = useState<AudioLibraryType>("guangchuhecheng") // 改为默认使用广初合成
+  const [testMusicSource, setTestMusicSource] = useState<string>(audioFileMap["guangchuhecheng"]["试音音乐"])
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== "undefined" ? navigator.onLine : true)
   const [offlineModeEnabled, setOfflineModeEnabled] = useState<boolean>(false)
   const [audioCache, setAudioCache] = useState<Record<string, AudioCache>>({})
@@ -155,6 +185,7 @@ export default function ExamBroadcastPanel() {
   const [isPreloading, setIsPreloading] = useState<boolean>(false)
   const [showSuccessMessage, setShowSuccessMessage] = useState<boolean>(false)
   const [successMessage, setSuccessMessage] = useState<string>("")
+  const [useBackupAudio, setUseBackupAudio] = useState<boolean>(false)
 
   // 添加考试表单状态
   const [newExamSubject, setNewExamSubject] = useState<string>("")
@@ -303,7 +334,7 @@ export default function ExamBroadcastPanel() {
     }
   }
 
-  // 缓存音频文件
+  // 改进的音频文件缓存函数
   const cacheAudioFile = async (url: string) => {
     if (!dbRef.current || url.startsWith("data:")) return
 
@@ -320,35 +351,76 @@ export default function ExamBroadcastPanel() {
     }))
 
     try {
-      // 获取音频文件
-      const response = await fetch(url)
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
+      // 增加重试机制和更长的超时时间
+      let retryCount = 0
+      const maxRetries = 3
 
-      const blob = await response.blob()
+      while (retryCount < maxRetries) {
+        try {
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), 10000) // 增加到10秒超时
 
-      // 保存到IndexedDB
-      const transaction = dbRef.current.transaction(AUDIO_STORE, "readwrite")
-      const store = transaction.objectStore(AUDIO_STORE)
+          const response = await fetch(url, {
+            signal: controller.signal,
+            cache: "no-store",
+            headers: {
+              Accept: "audio/*,*/*;q=0.9",
+            },
+          })
+          clearTimeout(timeoutId)
 
-      const cacheItem = {
-        url,
-        blob,
-        lastAccessed: Date.now(),
-        status: "cached",
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`)
+          }
+
+          const blob = await response.blob()
+
+          // 验证blob是否为有效的音频文件
+          if (blob.size === 0) {
+            throw new Error("音频文件为空")
+          }
+
+          // 保存到IndexedDB
+          const transaction = dbRef.current.transaction(AUDIO_STORE, "readwrite")
+          const store = transaction.objectStore(AUDIO_STORE)
+
+          const cacheItem = {
+            url,
+            blob,
+            lastAccessed: Date.now(),
+            status: "cached",
+          }
+
+          store.put(cacheItem)
+
+          // 更新内存中的缓存状态
+          setAudioCache((prev) => ({
+            ...prev,
+            [url]: {
+              url: cacheItem.url,
+              blob: cacheItem.blob,
+              lastAccessed: cacheItem.lastAccessed,
+              status: cacheItem.status as "pending" | "cached" | "error",
+            },
+          }))
+
+          console.log(`音频缓存成功: ${url}`)
+          return true
+        } catch (error) {
+          retryCount++
+          console.warn(`缓存音频失败 (${url}), 重试 ${retryCount}/${maxRetries}:`, error)
+
+          if (retryCount >= maxRetries) {
+            throw error
+          }
+
+          // 等待一段时间后重试
+          await new Promise((resolve) => setTimeout(resolve, 1000 * retryCount))
+        }
       }
-
-      store.put(cacheItem)
-
-      // 更新内存中的缓存状态
-      setAudioCache((prev) => ({
-        ...prev,
-        [url]: cacheItem,
-      }))
-
-      console.log(`音频缓存成功: ${url}`)
-      return true
     } catch (error) {
       console.error(`缓存音频失败 (${url}):`, error)
+      setAudioError(`无法加载音频文件: ${url}. 错误: ${error instanceof Error ? error.message : String(error)}`)
 
       // 更新缓存状态为error
       setAudioCache((prev) => ({
@@ -401,19 +473,29 @@ export default function ExamBroadcastPanel() {
   }
 
   // 预加载所有音频文件
-  const preloadAllAudio = async () => {
+  const preloadAllAudio = useCallback(async () => {
     if (isPreloading) return
 
     setIsPreloading(true)
     setPreloadProgress(0)
 
-    const audioUrls = Object.values(audioFileMap).filter((url) => !url.startsWith("data:"))
+    const allAudioUrls: string[] = []
+    for (const libraryKey in audioFileMap) {
+      const library = audioFileMap[libraryKey as AudioLibraryType]
+      for (const eventType in library) {
+        const url = library[eventType as keyof typeof library]
+        if (typeof url === "string" && !url.startsWith("data:")) {
+          allAudioUrls.push(url)
+        }
+      }
+    }
+
     let completed = 0
 
-    for (const url of audioUrls) {
+    for (const url of allAudioUrls) {
       await cacheAudioFile(url)
       completed++
-      setPreloadProgress(Math.floor((completed / audioUrls.length) * 100))
+      setPreloadProgress(Math.floor((completed / allAudioUrls.length) * 100))
     }
 
     setIsPreloading(false)
@@ -422,7 +504,246 @@ export default function ExamBroadcastPanel() {
       title: "音频预加载完成",
       description: `已成功预加载 ${completed} 个音频文件。`,
     })
-  }
+  }, [])
+
+  // 改进的暂停音频函数
+  const pauseAudio = useCallback(() => {
+    try {
+      if (audioRef.current && isPlaying) {
+        audioRef.current.pause()
+        setIsPlaying(false)
+
+        if (progressInterval.current) {
+          clearInterval(progressInterval.current)
+          progressInterval.current = null
+        }
+      }
+    } catch (error) {
+      console.error("暂停音频失败:", error)
+      toast({
+        title: "暂停音频失败",
+        description: error instanceof Error ? error.message : "未知错误",
+        variant: "destructive",
+      })
+    }
+  }, [isPlaying])
+
+  // 改进的音频播放函数，专门针对广高音频问题进行优化
+  const playAudio = useCallback(
+    async (eventId: string) => {
+      const event = examEvents.find((e) => e.id === eventId)
+      if (!event) return
+
+      try {
+        // 重置错误状态
+        setAudioError(null)
+
+        // 如果当前正在播放同一个事件，则暂停
+        if (isPlaying && activeEvent === eventId && audioRef.current) {
+          pauseAudio()
+          return
+        }
+
+        // 如果有其他音频正在播放，先停止
+        if (isPlaying && audioRef.current) {
+          audioRef.current.pause()
+          audioRef.current.currentTime = 0
+          if (progressInterval.current) {
+            clearInterval(progressInterval.current)
+            progressInterval.current = null
+          }
+          // 短暂延迟，确保前一个音频操作完成
+          await new Promise((resolve) => setTimeout(resolve, 200))
+        }
+
+        // 如果试音音乐正在播放，停止它
+        stopTestMusic()
+
+        setActiveEvent(eventId)
+        setIsPlaying(true)
+        setIsAudioLoading(true)
+
+        // 确定要使用的音频文件
+        let audioUrl = event.audioFile
+        console.log(`尝试播放音频: ${audioUrl}`)
+
+
+
+        // 如果是离线模式，从缓存获取音频
+        let finalAudioUrl = audioUrl
+        if (!isOnline || offlineModeEnabled) {
+          const cachedUrl = await getAudioFromCache(audioUrl)
+          if (cachedUrl) {
+            finalAudioUrl = cachedUrl
+            console.log(`使用缓存音频: ${finalAudioUrl}`)
+          }
+        }
+
+        // 创建新的Audio对象进行播放
+        const audio = new Audio()
+
+        // 设置音频属性
+        audio.volume = isMuted ? 0 : volume / 100
+        audio.preload = "auto"
+
+        // 设置错误处理
+        audio.onerror = (e) => {
+          console.error("音频加载失败:", e)
+          setIsPlaying(false)
+          setActiveEvent(null)
+          setIsAudioLoading(false)
+
+          let errorMessage = "未知错误"
+          if (audio.error) {
+            switch (audio.error.code) {
+              case 1:
+                errorMessage = "获取过程被中止"
+                break
+              case 2:
+                errorMessage = "网络错误"
+                break
+              case 3:
+                errorMessage = "解码错误"
+                break
+              case 4:
+                errorMessage = "音频格式不支持"
+                break
+              default:
+                errorMessage = `错误代码: ${audio.error.code}`
+            }
+          }
+
+          setAudioError(`音频播放失败: ${errorMessage}`)
+          toast({
+            title: "音频播放失败",
+            description: `错误: ${errorMessage}`,
+            variant: "destructive",
+          })
+        }
+
+        // 设置加载完成处理
+        audio.oncanplaythrough = () => {
+          setAudioDuration(audio.duration)
+          setIsAudioLoading(false)
+          console.log("音频加载完成，可以播放")
+        }
+
+        // 设置播放结束处理
+        audio.onended = () => {
+          console.log("音频播放结束")
+          setIsPlaying(false)
+          setActiveEvent(null)
+          setAudioProgress(0)
+
+          if (progressInterval.current) {
+            clearInterval(progressInterval.current)
+            progressInterval.current = null
+          }
+        }
+
+        // 设置音频源并加载
+        audio.src = finalAudioUrl
+        audio.load()
+
+        // 等待音频加载完成
+        await new Promise((resolve, reject) => {
+          const loadTimeout = setTimeout(() => {
+            console.warn("音频加载超时")
+            reject(new Error("音频加载超时"))
+          }, 15000) // 15秒超时
+
+          audio.onloadedmetadata = () => {
+            clearTimeout(loadTimeout)
+            setAudioDuration(audio.duration)
+            setIsAudioLoading(false)
+            console.log("音频元数据加载完成")
+            resolve(true)
+          }
+
+          // 如果音频已经加载完成，直接解析
+          if (audio.readyState >= 2) {
+            clearTimeout(loadTimeout)
+            setAudioDuration(audio.duration)
+            setIsAudioLoading(false)
+            console.log("音频已经加载完成")
+            resolve(true)
+          }
+        })
+
+        // 尝试播放音频
+        try {
+          console.log("尝试播放音频...")
+          await audio.play()
+          console.log("音频开始播放")
+
+          // 更新audioRef引用
+          audioRef.current = audio
+
+          // 更新进度条
+          if (progressInterval.current) {
+            clearInterval(progressInterval.current)
+          }
+
+          progressInterval.current = setInterval(() => {
+            if (audio && !audio.paused) {
+              const progress = (audio.currentTime / audio.duration) * 100
+              setAudioProgress(progress)
+            }
+          }, 100)
+        } catch (error) {
+          console.error("播放音频失败:", error)
+          setIsPlaying(false)
+          setActiveEvent(null)
+          setIsAudioLoading(false)
+          setAudioError(`播放音频失败: ${error instanceof Error ? error.message : "未知错误"}`)
+
+          toast({
+            title: "播放音频失败",
+            description: error instanceof Error ? error.message : "未知错误",
+            variant: "destructive",
+          })
+
+          // 如果是用户交互问题，提供提示
+          if (error instanceof DOMException && error.name === "NotAllowedError") {
+            console.log("用户交互问题，请确保用户已与页面交互")
+            toast({
+              title: "需要用户交互",
+              description: "请先点击页面任意位置，然后再尝试播放音频。",
+              variant: "default",
+            })
+          }
+        }
+      } catch (error) {
+        console.error("音频处理错误:", error)
+        setIsPlaying(false)
+        setActiveEvent(null)
+        setIsAudioLoading(false)
+        setAudioError(`音频处理错误: ${error instanceof Error ? error.message : "未知错误"}`)
+
+        toast({
+          title: "音频处理错误",
+          description: error instanceof Error ? error.message : "未知错误",
+          variant: "destructive",
+        })
+      }
+    },
+    [
+      examEvents,
+      isPlaying,
+      activeEvent,
+      isOnline,
+      offlineModeEnabled,
+      isMuted,
+      volume,
+      pauseAudio,
+      selectedAudioLibrary,
+    ],
+  )
+
+  // 在客户端初始化时间
+  useEffect(() => {
+    setCurrentTime(new Date())
+  }, [])
 
   // 更新当前时间和倒计时
   useEffect(() => {
@@ -470,7 +791,7 @@ export default function ExamBroadcastPanel() {
     }, 1000)
 
     return () => clearInterval(timer)
-  }, [examEvents, autoPlayEnabled, isPlaying])
+  }, [examEvents, autoPlayEnabled, isPlaying, playAudio])
 
   // 音量控制
   useEffect(() => {
@@ -512,6 +833,14 @@ export default function ExamBroadcastPanel() {
       }
     }
   }, [])
+
+  // 当选择的音频库变化时，更新测试音乐源
+  useEffect(() => {
+    setTestMusicSource(audioFileMap[selectedAudioLibrary]["试音音乐"])
+    console.log(
+      `音频库切换为 ${selectedAudioLibrary}，测试音乐源更新为: ${audioFileMap[selectedAudioLibrary]["试音音乐"]}`,
+    )
+  }, [selectedAudioLibrary])
 
   // 监听考试事件变化，保存到数据库
   useEffect(() => {
@@ -636,7 +965,9 @@ export default function ExamBroadcastPanel() {
               subject,
               eventType: eventTypeKey as any,
               scheduledTime: eventTime,
-              audioFile: audioFileMap[eventTypeKey as keyof typeof audioFileMap] || audioFileMap["考试开始"],
+              audioFile:
+                audioFileMap[selectedAudioLibrary][eventTypeKey as keyof typeof audioFileMap.default] ||
+                audioFileMap[selectedAudioLibrary]["考试开始"],
               duration: eventType === "考试开始" ? duration : undefined,
             })
           })
@@ -757,7 +1088,9 @@ export default function ExamBroadcastPanel() {
           subject: newExamSubject,
           eventType: eventTypeKey as any,
           scheduledTime: eventTime,
-          audioFile: audioFileMap[eventTypeKey as keyof typeof audioFileMap] || audioFileMap["考试开始"],
+          audioFile:
+            audioFileMap[selectedAudioLibrary][eventTypeKey as keyof typeof audioFileMap.default] ||
+            audioFileMap[selectedAudioLibrary]["考试开始"],
           duration: eventType === "考试开始" ? duration : undefined,
         })
       })
@@ -814,294 +1147,7 @@ export default function ExamBroadcastPanel() {
     }
   }
 
-  // 检查音频文件是否可访问
-  const checkAudioFile = async (url: string): Promise<boolean> => {
-    try {
-      console.log(`正在检查音频文件: ${url}`)
-
-      // 如果是离线模式，检查缓存
-      if (!isOnline || offlineModeEnabled) {
-        const cachedUrl = await getAudioFromCache(url)
-        return !!cachedUrl
-      }
-
-      // 对于本地文件，直接返回true，因为fetch可能无法正确检查本地文件
-      if (url.startsWith("/")) {
-        return true
-      }
-
-      const response = await fetch(url, { method: "HEAD" })
-      const isAvailable = response.ok
-      console.log(`音频文件 ${url} 检查结果: ${isAvailable ? "可用" : "不可用"}`)
-      return isAvailable
-    } catch (error) {
-      console.error(`音频文件检查失败 (${url}):`, error)
-      return false
-    }
-  }
-
-  // 修改播放音频函数，移除备用音频处理
-  const playAudio = async (eventId: string) => {
-    const event = examEvents.find((e) => e.id === eventId)
-    if (!event) return
-
-    try {
-      // 重置错误状态
-      setAudioError(null)
-
-      // 如果当前正在播放同一个事件，则暂停
-      if (isPlaying && activeEvent === eventId && audioRef.current) {
-        pauseAudio()
-        return
-      }
-
-      // 如果有其他音频正在播放，先停止
-      if (isPlaying && audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current.currentTime = 0
-        if (progressInterval.current) {
-          clearInterval(progressInterval.current)
-          progressInterval.current = null
-        }
-        // 短暂延迟，确保前一个音频操作完成
-        await new Promise((resolve) => setTimeout(resolve, 100))
-      }
-
-      // 如果试音音乐正在播放，停止它
-      stopTestMusic()
-
-      setActiveEvent(eventId)
-      setIsPlaying(true)
-      setIsAudioLoading(true) // 设置加载状态
-
-      // 确定要使用的音频文件
-      const audioUrl = event.audioFile
-      console.log(`尝试播放音频: ${audioUrl}`)
-
-      // 如果是离线模式，从缓存获取音频
-      let finalAudioUrl = audioUrl
-      if (!isOnline || offlineModeEnabled) {
-        const cachedUrl = await getAudioFromCache(audioUrl)
-        if (cachedUrl) {
-          finalAudioUrl = cachedUrl
-          console.log(`使用缓存音频: ${finalAudioUrl}`)
-        }
-      }
-
-      // 创建一个新的Audio对象来测试音频是否可以加载
-      const testAudio = new Audio()
-
-      try {
-        // 设置一个更长的超时，如果10秒内没有加载完成，则认为加载失败
-        const audioLoadPromise = new Promise((resolve, reject) => {
-          testAudio.oncanplaythrough = () => resolve(true)
-          testAudio.onerror = (e) => {
-            console.error("测试音频加载失败:", e)
-            reject(new Error(`测试音频加载失败: ${e instanceof Event ? "未知错误" : e}`))
-          }
-
-          // 增加超时时间到10秒
-          setTimeout(() => reject(new Error("音频加载超时")), 10000)
-        })
-
-        testAudio.src = finalAudioUrl
-        testAudio.load()
-
-        // 等待音频加载完成或超时
-        await audioLoadPromise
-        console.log(`音频测试加载成功: ${finalAudioUrl}`)
-      } catch (error) {
-        console.error("音频加载失败:", error)
-        setIsPlaying(false)
-        setActiveEvent(null)
-        setIsAudioLoading(false)
-        setAudioError(`音频加载失败: ${error instanceof Error ? error.message : "未知错误"}`)
-
-        toast({
-          title: "音频加载失败",
-          description: error instanceof Error ? error.message : "未知错误",
-          variant: "destructive",
-        })
-        return
-      }
-
-      // 播放对应的音频文件
-      if (audioRef.current) {
-        console.log(`设置音频源: ${finalAudioUrl}`)
-        audioRef.current.src = finalAudioUrl
-        audioRef.current.volume = isMuted ? 0 : volume / 100
-
-        // 等待音频加载完成
-        await new Promise((resolve, reject) => {
-          if (audioRef.current) {
-            // 增加超时时间到15秒
-            const loadTimeout = setTimeout(() => {
-              console.warn("音频加载超时")
-              reject(new Error("音频加载超时"))
-            }, 15000) // 15秒超时
-
-            // 添加进度事件监听
-            audioRef.current.onprogress = () => {
-              console.log("音频加载中...")
-              // 重置超时计时器
-              clearTimeout(loadTimeout)
-              const newTimeout = setTimeout(() => {
-                console.warn("音频加载超时")
-                reject(new Error("音频加载超时"))
-              }, 15000)
-            }
-
-            audioRef.current.onloadedmetadata = () => {
-              clearTimeout(loadTimeout)
-              if (audioRef.current) {
-                setAudioDuration(audioRef.current.duration)
-                setIsAudioLoading(false) // 加载完成
-                console.log("音频元数据加载完成")
-                resolve(true)
-              }
-            }
-
-            // 如果音频已经加载完成，直接解析
-            if (audioRef.current.readyState >= 2) {
-              clearTimeout(loadTimeout)
-              setAudioDuration(audioRef.current.duration)
-              setIsAudioLoading(false) // 加载完成
-              console.log("音频已经加载完成")
-              resolve(true)
-            }
-
-            // 处理加载错误
-            audioRef.current.onerror = (e) => {
-              clearTimeout(loadTimeout)
-              console.error("音频加载失败:", e)
-
-              // 获取更详细的错误信息
-              let errorMessage = "未知错误"
-              if (audioRef.current && audioRef.current.error) {
-                switch (audioRef.current.error.code) {
-                  case 1:
-                    errorMessage = "获取过程被中止"
-                    break
-                  case 2:
-                    errorMessage = "网络错误"
-                    break
-                  case 3:
-                    errorMessage = "解码错误"
-                    break
-                  case 4:
-                    errorMessage = "音频格式不支持"
-                    break
-                  default:
-                    errorMessage = `错误代码: ${audioRef.current.error.code}`
-                }
-              }
-
-              setAudioError(`音频加载失败: ${errorMessage}`)
-              setIsAudioLoading(false)
-              setIsPlaying(false)
-
-              toast({
-                title: "音频加载失败",
-                description: `错误: ${errorMessage}`,
-                variant: "destructive",
-              })
-              reject(new Error(`音频加载失败: ${errorMessage}`))
-            }
-          }
-        })
-
-        audioRef.current.onended = () => {
-          console.log("音频播放结束")
-          setIsPlaying(false)
-          setActiveEvent(null)
-          setAudioProgress(0)
-
-          if (progressInterval.current) {
-            clearInterval(progressInterval.current)
-            progressInterval.current = null
-          }
-        }
-
-        try {
-          console.log("尝试播放音频...")
-          await audioRef.current.play()
-          console.log("音频开始播放")
-
-          // 更新进度条
-          if (progressInterval.current) {
-            clearInterval(progressInterval.current)
-          }
-
-          progressInterval.current = setInterval(() => {
-            if (audioRef.current) {
-              const progress = (audioRef.current.currentTime / audioRef.current.duration) * 100
-              setAudioProgress(progress)
-            }
-          }, 100)
-        } catch (error) {
-          console.error("播放音频失败:", error)
-          setIsPlaying(false)
-          setActiveEvent(null)
-          setIsAudioLoading(false)
-          setAudioError(`播放音频失败: ${error instanceof Error ? error.message : "未知错误"}`)
-
-          // 显示错误通知
-          toast({
-            title: "播放音频失败",
-            description: error instanceof Error ? error.message : "未知错误",
-            variant: "destructive",
-          })
-
-          // 如果是用户交互问题，可以尝试自动重试一次
-          if (error instanceof DOMException && error.name === "NotAllowedError") {
-            console.log("用户交互问题，请确保用户已与页面交互")
-            toast({
-              title: "需要用户交互",
-              description: "请先点击页面任意位置，然后再尝试播放音频。",
-              variant: "default",
-            })
-          }
-        }
-      }
-    } catch (error) {
-      console.error("音频处理错误:", error)
-      setIsPlaying(false)
-      setActiveEvent(null)
-      setIsAudioLoading(false)
-      setAudioError(`音频处理错误: ${error instanceof Error ? error.message : "未知错误"}`)
-
-      // 显示错误通知
-      toast({
-        title: "音频处理错误",
-        description: error instanceof Error ? error.message : "未知错误",
-        variant: "destructive",
-      })
-    }
-  }
-
-  // 修改暂停音频函数，添加更好的错误处理
-  const pauseAudio = () => {
-    try {
-      if (audioRef.current && isPlaying) {
-        audioRef.current.pause()
-        setIsPlaying(false)
-
-        if (progressInterval.current) {
-          clearInterval(progressInterval.current)
-          progressInterval.current = null
-        }
-      }
-    } catch (error) {
-      console.error("暂停音频失败:", error)
-      toast({
-        title: "暂停音频失败",
-        description: error instanceof Error ? error.message : "未知错误",
-        variant: "destructive",
-      })
-    }
-  }
-
-  // 修改继续播放音频函数，添加更好的错误处理和异步支持
+  // 改进的继续播放音频函数
   const resumeAudio = async () => {
     try {
       if (audioRef.current && !isPlaying && activeEvent) {
@@ -1195,7 +1241,7 @@ export default function ExamBroadcastPanel() {
     }
   }
 
-  // 修改toggleTestMusic函数，移除备用音频处理
+  // 改进的试音音乐播放函数
   const toggleTestMusic = async () => {
     try {
       if (testMusicPlaying) {
@@ -1219,9 +1265,8 @@ export default function ExamBroadcastPanel() {
       // 设置加载状态
       setIsAudioLoading(true)
 
-      // 尝试播放试音音乐
       try {
-        console.log(`尝试播放试音音乐: ${testMusicSource}`)
+        console.log(`尝试播放试音音乐: ${testMusicSource}，当前音频库: ${selectedAudioLibrary}`)
 
         // 如果是离线模式，从缓存获取音频
         let sourceUrl = testMusicSource
@@ -1229,12 +1274,16 @@ export default function ExamBroadcastPanel() {
           const cachedUrl = await getAudioFromCache(sourceUrl)
           if (cachedUrl) {
             sourceUrl = cachedUrl
+            console.log(`使用缓存音频: ${sourceUrl}`)
+          } else {
+            console.log(`未找到缓存音频，使用原始路径: ${sourceUrl}`)
           }
         }
 
         // 创建新的Audio元素
         const audio = new Audio()
         audio.volume = isMuted ? 0 : (volume / 100) * 0.3
+        audio.preload = "auto"
 
         // 设置错误处理
         audio.onerror = (e) => {
@@ -1258,7 +1307,7 @@ export default function ExamBroadcastPanel() {
               variant: "destructive",
             })
           }
-        }, 5000) // 5秒超时
+        }, 8000) // 8秒超时
 
         // 设置加载完成处理
         audio.oncanplaythrough = () => {
@@ -1488,6 +1537,24 @@ export default function ExamBroadcastPanel() {
               强制离线模式
             </Label>
           </div>
+
+          <div className="flex items-center gap-2 ml-4">
+            <select
+              id="audio-library"
+              value={selectedAudioLibrary}
+              onChange={(e) => setSelectedAudioLibrary(e.target.value as AudioLibraryType)}
+              className="text-sm border rounded px-2 py-1"
+            >
+              {Object.entries(audioLibraryNames).map(([key, name]) => (
+                <option key={key} value={key}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <Label htmlFor="audio-library" className="text-sm">
+              音频库
+            </Label>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -1544,6 +1611,9 @@ export default function ExamBroadcastPanel() {
               启用离线模式后，系统将优先使用本地缓存的音频资源，适合在网络不稳定的环境下使用。
               建议首次使用时点击"预加载音频"按钮，将所有音频文件缓存到本地。
             </p>
+            <p className="text-sm text-muted-foreground">
+              音频库选择： 系统支持多种音频库，包括默广高、广初合成。如果音频出现问题，建议使用其他音频库。
+            </p>
             <Button variant="outline" size="sm" onClick={() => setShowHelp(false)} className="mt-2">
               关闭提示
             </Button>
@@ -1558,11 +1628,20 @@ export default function ExamBroadcastPanel() {
           <AlertTitle>音频加载错误</AlertTitle>
           <AlertDescription className="flex flex-col gap-2">
             <p>{audioError}</p>
-            <p>当前使用{useBackupAudio ? "备用" : "原始"}音频。</p>
+            <p>建议尝试以下解决方案：</p>
+            <ul className="list-disc list-inside text-sm">
+              <li>切换到广初合成音频库</li>
+              <li>检查网络连接</li>
+              <li>预加载音频文件到本地缓存</li>
+              <li>启用离线模式</li>
+            </ul>
             <div className="flex gap-2 mt-2">
               <Button variant="outline" size="sm" onClick={resetAudioError}>
                 <RefreshCw className="h-4 w-4 mr-2" />
                 重置音频设置
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setSelectedAudioLibrary("guangchuhecheng")}>
+                切换到广初合成
               </Button>
             </div>
           </AlertDescription>
@@ -1583,8 +1662,8 @@ export default function ExamBroadcastPanel() {
             <div className="space-y-4">
               <div>
                 <div className="text-sm font-medium text-muted-foreground mb-1">当前时间</div>
-                <div className="text-2xl font-bold">{formatTime(currentTime)}</div>
-                <div className="text-sm text-muted-foreground">{formatDate(currentTime)}</div>
+                <div className="text-2xl font-bold">{currentTime ? formatTime(currentTime) : "--:--"}</div>
+                <div className="text-sm text-muted-foreground">{currentTime ? formatDate(currentTime) : "--"}</div>
               </div>
               <div>
                 <div className="text-sm font-medium text-muted-foreground mb-1">当前科目</div>
@@ -1708,6 +1787,25 @@ export default function ExamBroadcastPanel() {
                           placeholder="例如：120"
                         />
                       </div>
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="audioLibrary" className="text-right">
+                          音库选择
+                        </Label>
+                        <div className="col-span-3">
+                          <select
+                            id="audioLibrary"
+                            value={selectedAudioLibrary}
+                            onChange={(e) => setSelectedAudioLibrary(e.target.value as AudioLibraryType)}
+                            className="w-full p-2 border rounded-md"
+                          >
+                            {Object.entries(audioLibraryNames).map(([key, name]) => (
+                              <option key={key} value={key}>
+                                {name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
                       <div className="grid grid-cols-4 items-start gap-4">
                         <Label className="text-right pt-2">广播事件</Label>
                         <div className="col-span-3 grid grid-cols-2 gap-2">
@@ -1720,6 +1818,8 @@ export default function ExamBroadcastPanel() {
                               />
                               <Label htmlFor={`broadcast-${type}`} className="text-sm">
                                 {type}
+                                {/* 如果选择的是广初合成音库，并且该音频类型在不全列表中，则标注 (广高) */}
+                                {selectedAudioLibrary === "guangchuhecheng" && guangchuhechengIncompleteAudios.includes(type) && " (广高)"}
                               </Label>
                             </div>
                           ))}
@@ -1870,7 +1970,7 @@ export default function ExamBroadcastPanel() {
                           className={cn(
                             "absolute -left-10 w-4 h-4 rounded-full mt-1.5 border-2 border-background",
                             activeEvent === event.id ? "bg-green-500" : "bg-gray-300 dark:bg-gray-600",
-                            event.scheduledTime < currentTime ? "bg-gray-500" : "",
+                            event.scheduledTime < (currentTime || new Date()) ? "bg-gray-500" : "",
                             eventTypeColorMap[event.eventType as keyof typeof eventTypeColorMap] || "",
                           )}
                         />
@@ -1881,12 +1981,15 @@ export default function ExamBroadcastPanel() {
                             activeEvent === event.id
                               ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-900"
                               : "",
-                            event.scheduledTime < currentTime ? "bg-gray-50 dark:bg-gray-800/50" : "",
+                            event.scheduledTime < (currentTime || new Date()) ? "bg-gray-50 dark:bg-gray-800/50" : "",
                           )}
                         >
                           <div className="mb-2 sm:mb-0">
                             <div className="font-medium flex items-center gap-2">
                               {event.subject} - {event.eventType}
+                              {event.customMessage && (
+                                <span className="text-xs text-amber-600 ml-1">{event.customMessage}</span>
+                              )}
                               <Badge
                                 className={cn(
                                   "text-white",
@@ -1968,6 +2071,9 @@ export default function ExamBroadcastPanel() {
                           >
                             {event.eventType}
                           </Badge>
+                          {event.customMessage && (
+                            <span className="text-xs text-amber-600 ml-1">{event.customMessage}</span>
+                          )}
                         </div>
                         <div className="text-sm text-muted-foreground">{event.subject}</div>
                       </div>
