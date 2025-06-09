@@ -1,0 +1,7 @@
+45min_before；45min_before.mp3；监考老师领取试卷
+30min_before；30min_before.mp3；考生入场
+15min_before；15min_before.mp3；启封答题卡
+10min_before；10min_before.mp3；分发试卷
+start_exam；start_exam.mp3；考试开始
+15min_remaining；15min_remaining.mp3；离考试结束还有_15_分钟
+end_exam；end_exam.mp3；考试结束
