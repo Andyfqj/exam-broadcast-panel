@@ -49,6 +49,12 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Switch } from "@/components/ui/switch"
+import {
+  Select,
+  SelectContent,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 // 定义考试事件类型
 interface ExamEvent {
@@ -66,9 +72,10 @@ interface ExamEvent {
     | "考试前10分钟"
     | "考试前5分钟"
   scheduledTime: Date
-  audioFile: string
-  duration?: number // 考试时长（分钟），仅对"考试开始"事件有效
+  audioFile: string;
+  duration?: number; // 考试时长（分钟），仅对"考试开始"事件有效
   customMessage?: string // 自定义消息
+  displayName?: string; // 新增字段，用于存储自定义显示名称
 }
 
 // 音频缓存接口
@@ -193,6 +200,7 @@ export default function ExamBroadcastPanel() {
   const [newExamTime, setNewExamTime] = useState<string>("")
   const [newExamDuration, setNewExamDuration] = useState<string>("")
   const [selectedBroadcastTypes, setSelectedBroadcastTypes] = useState<string[]>([])
+  const [newExamEventType, setNewExamEventType] = useState<ExamEvent["eventType"] | "">("") // 新增状态变量
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const testMusicRef = useRef<HTMLAudioElement | null>(null)
@@ -274,41 +282,64 @@ export default function ExamBroadcastPanel() {
     }
   }, [])
 
-  // 从IndexedDB加载考试事件
-  const loadExamEventsFromDB = () => {
-    if (!dbRef.current) return
+  const loadExamEventsFromDB = useCallback(async () => {
+    if (!dbRef.current) return;
 
-    const transaction = dbRef.current.transaction(EXAM_STORE, "readonly")
-    const store = transaction.objectStore(EXAM_STORE)
-    const request = store.getAll()
+    const transaction = dbRef.current.transaction(EXAM_STORE, "readonly");
+    const store = transaction.objectStore(EXAM_STORE);
+    const request = store.getAll();
 
-    request.onsuccess = () => {
-      const savedEvents = request.result
+    request.onsuccess = async () => {
+      const savedEvents = request.result;
+      let events: ExamEvent[] = [];
+
       if (savedEvents && savedEvents.length > 0) {
         // 转换日期字符串回Date对象
-        const events = savedEvents.map((event) => ({
+        events = savedEvents.map((event) => ({
           ...event,
           scheduledTime: new Date(event.scheduledTime),
-        }))
+        }));
+        console.log(`从数据库加载了 ${events.length} 个考试事件`);
+      }
 
-        setExamEvents(events)
-        console.log(`从数据库加载了 ${events.length} 个考试事件`)
+      // 从 /api/audio-config 获取自定义音频配置
+      try {
+        const response = await fetch('/api/audio-config');
+        if (response.ok) {
+          const audioConfigs = await response.json();
+          console.log('加载自定义音频配置:', audioConfigs);
 
-        // 如果有考试日期，设置它
-        if (events.length > 0) {
-          const firstEvent = events.find((e) => e.eventType === "考试开始")
-          if (firstEvent) {
-            const date = firstEvent.scheduledTime
-            setExamDate(`${date.getFullYear()}.${date.getMonth() + 1}.${date.getDate()}`)
-          }
+          // 将自定义名称匹配到 examEvents
+          events = events.map(event => {
+            const matchedConfig = audioConfigs.find(
+              (config: { defaultName: string; actualFileName: string; displayName: string }) =>
+                config.defaultName === event.eventType || config.actualFileName === event.audioFile.split('/').pop()
+            );
+            return matchedConfig ? { ...event, displayName: matchedConfig.displayName } : event;
+          });
+        } else {
+          console.error('Failed to fetch audio configurations:', response.statusText);
+        }
+      } catch (error) {
+        console.error('Error fetching audio configurations:', error);
+      }
+
+      setExamEvents(events);
+
+      // 如果有考试日期，设置它
+      if (events.length > 0) {
+        const firstEvent = events.find((e) => e.eventType === "考试开始");
+        if (firstEvent) {
+          const date = firstEvent.scheduledTime;
+          setExamDate(`${date.getFullYear()}.${date.getMonth() + 1}.${date.getDate()}`);
         }
       }
-    }
+    };
 
     request.onerror = (event) => {
-      console.error("加载考试事件失败:", event)
-    }
-  }
+      console.error("从数据库加载考试事件失败:", (event.target as IDBRequest).error);
+    };
+  }, [setExamEvents]);
 
   // 保存考试事件到IndexedDB
   const saveExamEventsToDB = (events: ExamEvent[]) => {
@@ -1612,7 +1643,7 @@ export default function ExamBroadcastPanel() {
               建议首次使用时点击"预加载音频"按钮，将所有音频文件缓存到本地。
             </p>
             <p className="text-sm text-muted-foreground">
-              音频库选择： 系统支持多种音频库，包括默广高、广初合成。如果音频出现问题，建议使用其他音频库。
+              音频库选择： 系统支持多种音频库，包括广高、广初合成。如果音频出现问题，建议使用其他音频库。
             </p>
             <Button variant="outline" size="sm" onClick={() => setShowHelp(false)} className="mt-2">
               关闭提示
@@ -1986,7 +2017,7 @@ export default function ExamBroadcastPanel() {
                         >
                           <div className="mb-2 sm:mb-0">
                             <div className="font-medium flex items-center gap-2">
-                              {event.subject} - {event.eventType}
+                              {event.subject} - {event.displayName || event.eventType}
                               {event.customMessage && (
                                 <span className="text-xs text-amber-600 ml-1">{event.customMessage}</span>
                               )}
@@ -2069,7 +2100,7 @@ export default function ExamBroadcastPanel() {
                               eventTypeColorMap[event.eventType as keyof typeof eventTypeColorMap] || "bg-gray-500",
                             )}
                           >
-                            {event.eventType}
+                            {event.displayName || event.eventType}
                           </Badge>
                           {event.customMessage && (
                             <span className="text-xs text-amber-600 ml-1">{event.customMessage}</span>
