@@ -67,10 +67,10 @@ interface ExamEvent {
     | "考试提醒"
     | "考试前45分钟"
     | "考试前30分钟"
+    | "考试前26分钟"
     | "考试前19分钟"
     | "考试前15分钟"
     | "考试前10分钟"
-    | "考试前5分钟"
   scheduledTime: Date
   audioFile: string;
   duration?: number; // 考试时长（分钟），仅对"考试开始"事件有效
@@ -97,7 +97,7 @@ const audioLibraryNames = {
 
 
 // 广初合成音库不全的音频列表
-const guangchuhechengIncompleteAudios = ["考试前19分钟", "考试前26分钟", "考试前5分钟"]
+const guangchuhechengIncompleteAudios = ["考试前19分钟", "考试前26分钟"]
 
 
 // 修改音频文件映射，添加不同音库的支持
@@ -142,21 +142,21 @@ const eventTypeColorMap = {
   考试前19分钟: "bg-pink-500",
   考试前15分钟: "bg-blue-500",
   考试前10分钟: "bg-cyan-500",
-  考试前5分钟: "bg-teal-500",
 }
 
 // 可选的广播事件类型
 const broadcastEventTypes = [
+  "分发试卷",
+  "考试开始",
+  "考试结束",
+  "考试提醒",
   "考试前45分钟",
   "考试前30分钟",
+  "考试前26分钟",
   "考试前19分钟",
   "考试前15分钟",
   "考试前10分钟",
-  "考试前5分钟",
-  "分发试卷",
-  "考试开始",
-  "考试提醒",
-  "考试结束",
+  // "考试前5分钟", // 移除此行
 ]
 
 // IndexedDB 数据库名称和版本
@@ -961,6 +961,9 @@ export default function ExamBroadcastPanel() {
               case "考试前30分钟":
                 eventTime = new Date(examStartTime.getTime() - 30 * 60000)
                 break
+              case "考试前26分钟": // Add this case
+                eventTime = new Date(examStartTime.getTime() - 26 * 60000)
+                break
               case "考试前19分钟":
                 eventTime = new Date(examStartTime.getTime() - 19 * 60000)
                 break
@@ -1083,6 +1086,9 @@ export default function ExamBroadcastPanel() {
             break
           case "考试前30分钟":
             eventTime = new Date(examStartTime.getTime() - 30 * 60000)
+            break
+          case "考试前26分钟": // Add this case
+            eventTime = new Date(examStartTime.getTime() - 26 * 60000)
             break
           case "考试前19分钟":
             eventTime = new Date(examStartTime.getTime() - 19 * 60000)
