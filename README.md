@@ -105,7 +105,7 @@ exam-broadcast-panel/
 2. 创建你的特性分支 (`git checkout -b feature/AmazingFeature`)
 3. 提交你的更改 (`git commit -m 'Add some AmazingFeature'`)
 4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启一个 Pull Request
+5. 开启一个 Pull Request 
 
 ## 许可证
 
