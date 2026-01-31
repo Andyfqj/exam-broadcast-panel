@@ -193,6 +193,7 @@ export default function ExamBroadcastPanel() {
   const [showSuccessMessage, setShowSuccessMessage] = useState<boolean>(false)
   const [successMessage, setSuccessMessage] = useState<string>("")
   const [useBackupAudio, setUseBackupAudio] = useState<boolean>(false)
+  const [forceContinue, setForceContinue] = useState<boolean>(false); // 新增状态
 
   // 添加考试表单状态
   const [newExamSubject, setNewExamSubject] = useState<string>("")
@@ -201,6 +202,8 @@ export default function ExamBroadcastPanel() {
   const [isOldWebKit, setIsOldWebKit] = useState(false);
 
   useEffect(() => {
+    if (forceContinue) return; // 如果强制继续，则不执行检测
+
     const userAgent = navigator.userAgent.toLowerCase();
     const isAndroid = /android/.test(userAgent);
     const webkitVersionMatch = userAgent.match(/applewebkit\/(\d+)/);
@@ -211,7 +214,7 @@ export default function ExamBroadcastPanel() {
         setIsOldWebKit(true);
       }
     }
-  }, []);
+  }, [forceContinue]);
   const [newExamDuration, setNewExamDuration] = useState<string>("")
   const [selectedBroadcastTypes, setSelectedBroadcastTypes] = useState<string[]>([])
   const [newExamEventType, setNewExamEventType] = useState<ExamEvent["eventType"] | "">("") // 新增状态变量
@@ -1573,19 +1576,35 @@ export default function ExamBroadcastPanel() {
     )
   }
 
+  if (isOldWebKit && !forceContinue) { // 仅在未强制继续时显示
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <AlertTriangle className="mr-2 h-6 w-6 text-destructive" />
+              兼容性警告
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p>我们检测到您正在使用旧版本的浏览器内核 (Android WebKit)，这可能会导致应用的部分功能无法正常工作，例如音频播放。</p>
+            <p className="mt-4">为了获得最佳体验，我们建议您更新 Android 系统或 WebView 版本，或使用其他现代浏览器访问。</p>
+            <Button
+              className="mt-6 w-full"
+              variant="destructive"
+              onClick={() => setForceContinue(true)} // 点击按钮以强制继续
+            >
+              我已知晓风险，强制继续
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto py-6">
       <h1 className="text-3xl font-bold mb-6 text-center">考试广播控制面板</h1>
-
-      {isOldWebKit && (
-        <Alert variant="destructive" className="mb-6">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>兼容性提示</AlertTitle>
-          <AlertDescription>
-            您似乎正在使用旧版 WebKit 内核的浏览器，部分功能可能无法正常工作。建议使用现代浏览器以获得最佳体验。
-          </AlertDescription>
-        </Alert>
-      )}
 
       {/* 网络状态指示器 */}
       <div className="flex items-center justify-between mb-4">
