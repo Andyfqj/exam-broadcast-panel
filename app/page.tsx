@@ -198,6 +198,20 @@ export default function ExamBroadcastPanel() {
   const [newExamSubject, setNewExamSubject] = useState<string>("")
   const [newExamDate, setNewExamDate] = useState<string>("")
   const [newExamTime, setNewExamTime] = useState<string>("")
+  const [isOldWebKit, setIsOldWebKit] = useState(false);
+
+  useEffect(() => {
+    const userAgent = navigator.userAgent.toLowerCase();
+    const isAndroid = /android/.test(userAgent);
+    const webkitVersionMatch = userAgent.match(/applewebkit\/(\d+)/);
+
+    if (isAndroid && webkitVersionMatch) {
+      const version = parseInt(webkitVersionMatch[1], 10);
+      if (version < 537) {
+        setIsOldWebKit(true);
+      }
+    }
+  }, []);
   const [newExamDuration, setNewExamDuration] = useState<string>("")
   const [selectedBroadcastTypes, setSelectedBroadcastTypes] = useState<string[]>([])
   const [newExamEventType, setNewExamEventType] = useState<ExamEvent["eventType"] | "">("") // 新增状态变量
@@ -1562,6 +1576,16 @@ export default function ExamBroadcastPanel() {
   return (
     <div className="container mx-auto py-6">
       <h1 className="text-3xl font-bold mb-6 text-center">考试广播控制面板</h1>
+
+      {isOldWebKit && (
+        <Alert variant="destructive" className="mb-6">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>兼容性提示</AlertTitle>
+          <AlertDescription>
+            您似乎正在使用旧版 WebKit 内核的浏览器，部分功能可能无法正常工作。建议使用现代浏览器以获得最佳体验。
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* 网络状态指示器 */}
       <div className="flex items-center justify-between mb-4">
