@@ -15,6 +15,24 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body className="min-h-screen bg-background">
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  if (typeof window.Proxy === 'undefined' || 
+                      typeof window.IntersectionObserver === 'undefined') {
+                    throw new Error('Unsupported browser');
+                  }
+                  // Check for arrow functions
+                  eval('var f = () => {};');
+                } catch (e) {
+                  window.location.href = 'https://old.gb.andyfeng.eu.org/';
+                }
+              })();
+            `,
+          }}
+        />
         {children}
         <Toaster />
       </body>
