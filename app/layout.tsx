@@ -14,25 +14,29 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body className="min-h-screen bg-background">
+      <head>
         <script
           dangerouslySetInnerHTML={{
             __html: `
               (function() {
-                try {
-                  if (typeof window.Proxy === 'undefined' || 
-                      typeof window.IntersectionObserver === 'undefined') {
-                    throw new Error('Unsupported browser');
-                  }
-                  // Check for arrow functions
-                  eval('var f = () => {};');
-                } catch (e) {
+                var userAgent = navigator.userAgent;
+                var isAndroid6 = userAgent.indexOf('Android 6.') > -1;
+                var isLegacyBrowser = !window.Proxy || !window.IntersectionObserver;
+                
+                if (isAndroid6 || isLegacyBrowser) {
+                  try {
+                    if (window.stop) {
+                      window.stop();
+                    }
+                  } catch (e) {}
                   window.location.href = 'https://old.gb.andyfeng.eu.org/';
                 }
               })();
             `,
           }}
         />
+      </head>
+      <body className="min-h-screen bg-background">
         {children}
         <Toaster />
       </body>
